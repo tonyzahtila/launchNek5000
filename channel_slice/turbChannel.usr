@@ -87,10 +87,6 @@ c-----------------------------------------------------------------------
       save    icalld
       data    icalld /0/
 
-      integer icalld_s
-      data icalld_s /0/
-      save icalld_s
-
       real atime,timel
       save atime,timel
 
@@ -98,18 +94,10 @@ c-----------------------------------------------------------------------
       integer ntdump
       save    ntdump
 
-      character*8 fmt
-      character*7 x1
-
       real    rwk(INTP_NMAX,ldim+1) ! r, s, t, dist2
       integer iwk(INTP_NMAX,3)      ! code, proc, el 
       save    rwk, iwk
 
-      real    rwk2(INTP_TOTP,ldim+1) ! r, s, t, dist2
-      integer iwk2(INTP_TOTP,3)      ! code, proc, el
-      save    rwk2, iwk2
-
-      integer nint, intp_h, intp_h2
       save    nint, intp_h, intp_h2
 
 
@@ -132,6 +120,17 @@ c-----------------------------------------------------------------------
      $       fwrk(lx1*ly1*lz1*lelt,ldim),
      $       fpts(ldim*INTP_TOTP),
      $       pts(3,INTP_TOTP)
+
+      integer icalld_s
+      data icalld_s /0/
+      save icalld_s
+
+      character*8 fmt
+      character*7 x1
+
+      real    rwk2(INTP_TOTP,ldim+1) ! r, s, t, dist2
+      integer iwk2(INTP_TOTP,3)      ! code, proc, el
+      save    rwk2, iwk2
 
 
       logical ifverbose
