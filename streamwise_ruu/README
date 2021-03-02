@@ -1,1 +1,8 @@
-1. this is a test
+To gather streamwise_ruu statistics:
+  1. copy lines [27,32] to your .usr file
+  2. change TWO_POINTCORR to 1
+  3. copy lines [143,168] to userchk file. Also make sure parameter(nstat=25) precedes this block.
+  4. copy lines [446,537] to somewhere in your userchk subroutine
+
+To go back to old mode:
+  1. change TWO_POINTCORR to 0
