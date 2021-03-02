@@ -393,16 +393,7 @@ c--------- Interpolate slice ------------------------------------------
 		write(64,*) 'TOTP', INTP_TOTP,INTP_NUMX,
      &           INTP_NUMY,'x, y, u',pts(1,:),pts(2,:),fpts
 	endif
-!          write(64,'(A)')
-!     &       '# x y u'
 
-!	do i = 1,INTP_TOTP
-!		write(64,3)
-!     &		pts(1,i),
-!     &          pts(2,i),
-!     &          fpts(i)
-
-!	enddo
       endif
 
 c--------- Begin Turbulent Energy -------------------------------------
