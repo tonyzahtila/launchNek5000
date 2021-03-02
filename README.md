@@ -1,2 +1,8 @@
 # launchNek5000
-# Nek5000_scripts
+
+Channel
+  - Create a slice with visualiation through spectral interpolation on a regular grid, able to decide he number of points to determine resolution.
+
+
+
+Pipe
