@@ -1,4 +1,3 @@
-echo "# Nek5000_scripts" >> README.md
 git pull
 git init
 git add *
