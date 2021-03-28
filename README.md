@@ -7,4 +7,6 @@ Channel
 
   - skewness/flatness:    Compute the 1D skewness/flatness profiles
 
+  - streamwise spectra:   Compute the 1D streamwise pre-multiplied energy spectra.
+
 Pipe
