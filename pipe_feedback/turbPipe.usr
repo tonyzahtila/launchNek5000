@@ -1,0 +1,785 @@
+C This is a round turbulent pipe flow example
+#include "PPICLF_USER.h"
+#include "PPICLF_STD.h"
+#define ZLENGTH (2.*PI)
+
+
+#define FB_FORCE          1
+#define FB_FREQ           100
+#define INTP_FB_RLOC      15
+#define INTP_FB_NUMR 	  100
+#define INTP_FB_NUMZ      500
+#define INTP_FB_NTHE      200
+#define INTP_FB_TOTP      INTP_FB_NUMZ*INTP_FB_NTHE*INTP_FB_NUMR
+
+C-----------------------------------------------------------------------
+C
+C  USER SPECIFIED ROUTINES:
+C
+C     - boundary conditions
+C     - initial conditions
+C     - variable properties
+C     - forcing function for fluid (f)
+C     - forcing function for passive scalar (q)
+C     - general purpose routine for checking errors etc.
+C
+C-----------------------------------------------------------------------
+      subroutine uservp (ix,iy,iz,ieg)
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userf  (ix,iy,iz,ieg)
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      ie = gllel(ieg)
+      call ppiclf_solve_GetProFldIJKEF(ix,iy,iz,ie,PPICLF_P_JFX,ffx)
+      call ppiclf_solve_GetProFldIJKEF(ix,iy,iz,ie,PPICLF_P_JFY,ffy)
+      call ppiclf_solve_GetProFldIJKEF(ix,iy,iz,ie,PPICLF_P_JFZ,ffz)
+!      call ppiclf_solve_GetProFldIJKEF(ix,iy,iz,ie,PPICLF_P_JPHIP,rphip)
+
+      ! Make it an acceleration
+      rdum = 1./vtrans(ix,iy,iz,ie,1)
+      FFX = ffx*rdum
+      FFY = ffy*rdum
+      FFZ = 4.0   + ffz*rdum
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userq  (ix,iy,iz,ieg)
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userchk
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'ARRAY_DEF'
+
+
+        common /compUFluc/ uf(lx1,ly1,lz1,lelt)         !This is the u' velocity
+     $                  ,umez(lx1,ly1,lz1,lelt)           !This is the mean velocity
+
+      character*132 fstring
+
+      real tmp1(lx1*ly1*lz1*lelv)
+      real tmp2(lx1*ly1*lz1*lelv)
+      real tmp3(lx1*ly1*lz1*lelv)
+
+      real umex(lx1*ly1*lz1*lelv)
+      real umey(lx1*ly1*lz1*lelv)
+
+      real ur_t(lx1,ly1,lz1,lelt)
+
+
+      real rs_t(lx1,ly1,lz1,lelt)
+      real rs(lx1,ly1,lz1,lelt)
+
+      real dissip_t(lx1,ly1,lz1,lelt)
+      real dissip(lx1,ly1,lz1,lelt)
+
+      real dpudx_t(lx1,ly1,lz1,lelt)
+      real dpudx(lx1,ly1,lz1,lelt)
+
+      real duudx2_t(lx1,ly1,lz1,lelt)
+      real duudx2(lx1,ly1,lz1,lelt)
+
+      real duuudx(lx1,ly1,lz1,lelt)
+      real duuudx_t(lx1,ly1,lz1,lelt)
+
+      integer intp_h,intp_fb
+      save    intp_h,intp_fb
+
+      integer icalld
+      save    icalld
+      data    icalld /0/
+
+      integer icalld_dup
+      data icalld_dup /0/
+      save icalld_dup
+
+      data icalld_fb /0/
+      save icalld_fb
+
+      common /fb_rwk_intp/
+     $       fb_fwrk(lx1*ly1*lz1*lelt,ldim),
+     $       fb_fpts(ldim*INTP_FB_TOTP),
+     $       fb_pts(3,INTP_FB_TOTP)
+
+      real  mean_fb(INTP_FB_NUMR)
+   
+      save  mean_fb
+
+      real  mean_fb_f(INTP_FB_NUMR)
+      save  mean_fb_f
+
+      integer counter
+      data    counter /0/
+      save    counter
+
+
+      real    fb_rwk(INTP_FB_TOTP,ldim+1) ! r, s, t, dist2
+      integer fb_iwk(INTP_FB_TOTP,3)      ! code, proc, el
+      save    fb_rwk, fb_iwk
+
+
+      real x0(3)
+      data x0 /0.0, 0.0, 0.0/
+      save x0
+
+      integer bIDs(1)
+      save iobj_wall
+
+      save atime,timel,drag_avg
+
+      logical ifverbose
+      common /gaaa/    wo1(lx1,ly1,lz1,lelv)
+     &              ,  wo2(lx1,ly1,lz1,lelv)
+     &              ,  wo3(lx1,ly1,lz1,lelv)
+
+      common /ugradtens/
+     & vxx(lx1,ly1,lz1,lelt),
+     & vxy(lx1,ly1,lz1,lelt),
+     & vxz(lx1,ly1,lz1,lelt),
+     & vyx(lx1,ly1,lz1,lelt),
+     & vyy(lx1,ly1,lz1,lelt),
+     & vyz(lx1,ly1,lz1,lelt),
+     & vzx(lx1,ly1,lz1,lelt),
+     & vzy(lx1,ly1,lz1,lelt),
+     & vzz(lx1,ly1,lz1,lelt)
+
+
+      real my_ffz(PPICLF_LEX,PPICLF_LEY,PPICLF_LEZ,lelt)
+
+      ! Compute velocity gradients
+       call gradm1(vxx,vxy,vxz,vx)
+       call gradm1(vyx,vyy,vyz,vy)
+       call gradm1(vzx,vzy,vzz,vz)
+
+      call ppiclf_solve_InterpFieldUser(PPICLF_R_JUX
+     >                          ,vx(1,1,1,1))
+      call ppiclf_solve_InterpFieldUser(PPICLF_R_JUY
+     >                          ,vy(1,1,1,1))
+      call ppiclf_solve_InterpFieldUser(PPICLF_R_JUZ
+     >                          ,vz(1,1,1,1))
+
+
+      ! Interpolation of VGT
+      call ppiclf_solve_InterpFieldUser(PPICLF_R_JVXX
+     >                          ,vxx(1,1,1,1))
+      call ppiclf_solve_InterpFieldUser(PPICLF_R_JVXY
+     >                          ,vxy(1,1,1,1))
+      call ppiclf_solve_InterpFieldUser(PPICLF_R_JVXZ
+     >                          ,vxz(1,1,1,1))
+      call ppiclf_solve_InterpFieldUser(PPICLF_R_JVYX
+     >                          ,vyx(1,1,1,1))
+      call ppiclf_solve_InterpFieldUser(PPICLF_R_JVYY
+     >                          ,vyy(1,1,1,1))
+      call ppiclf_solve_InterpFieldUser(PPICLF_R_JVYZ
+     >                          ,vyz(1,1,1,1))
+      call ppiclf_solve_InterpFieldUser(PPICLF_R_JVZX
+     >                          ,vzx(1,1,1,1))
+      call ppiclf_solve_InterpFieldUser(PPICLF_R_JVZY
+     >                          ,vzy(1,1,1,1))
+      call ppiclf_solve_InterpFieldUser(PPICLF_R_JVZZ
+     >                          ,vzz(1,1,1,1))
+
+
+!      call create_particles(npart,y,rprop)
+      ! Add them into solver
+!      call ppiclf_solve_AddParticles(npart,y,rprop)
+
+    ! Integrate particles
+      call ppiclf_solve_IntegrateParticle(istep ,
+     >                                    iostep,
+     >                                    dt    ,
+     >                                    time  )
+
+      if (ifneknek) call neknek_exchange
+
+      call copy(tmp1,vx,nx1*ny1*nz1*nelv)
+      call copy(tmp2,vy,nx1*ny1*nz1*nelv)
+      call copy(tmp3,vz,nx1*ny1*nz1*nelv)
+
+      if (icalld_dup.eq.0) then
+        bIDs(1) = 1
+        call create_obj(iobj_wall,bIDs,1)
+        drag_avg = 0
+        atime    = 0
+        timel    = time
+        open(unit=58,file='wall_shear_stress.dat')
+         write(58,'(A,1pe14.7)') '#time = ', time
+         write(58,'(A)')
+     $    '#  y    y+    uu    vv    ww    uv    tt    ut    -vt'
+
+        icalld_dup   = 1
+      endif
+
+      if (istep.eq.0) then
+         call set_obj                   ! objects for surface integrals
+         call rzero(x0,3)               ! define x0=0, note: torque w.r.t. x0
+      endif
+
+      dtime = time - timel
+      atime = atime + dtime
+
+      ! averaging over time
+      if (atime.ne.0. .and. dtime.ne.0.) then
+        beta      = dtime / atime
+        alpha     = 1. - beta
+
+        call torque_calc(1.0,x0,.false.,.false.) ! compute wall shear
+        drag_avg = alpha*drag_avg + beta*dragz(iobj_wall)
+      endif
+
+      n    = nx1*ny1*nz1*nelv
+      ubar = glsc2(vz,bm1,n)/volvm1
+
+      rho    = param(1)
+      dnu    = param(2)
+      A_w    = 2*pi * 0.5 * ZLENGTH
+      tw     = dragz(iobj_wall) / A_w
+      u_tau  = sqrt(tw / rho)
+      Re_tau = u_tau * 0.5 / dnu
+
+c     Write the file
+         write(58,3)
+     &           time,
+     &           u_tau,
+     &           ubar
+
+c     Close the file
+      if (time.eq.param(10)) then
+        close(58)
+      endif
+      
+  3         format(1p15e17.9)
+
+c     Read in mean field
+      if(icalld.eq.0) then
+        print*, "Read in Mean Field"
+        fstring = 'umean0.f00001'
+        call load_fld(fstring)
+
+        call copy(umex,vx,nx1*ny1*nz1*nelv)
+        call copy(umey,vy,nx1*ny1*nz1*nelv)
+        call copy(umez,vz,nx1*ny1*nz1*nelv)
+
+        call copy(vx,tmp1,nx1*ny1*nz1*nelv)
+        call copy(vy,tmp2,nx1*ny1*nz1*nelv)
+        call copy(vz,tmp3,nx1*ny1*nz1*nelv)
+
+        icalld = 1
+      endif
+
+
+      call    computeUFluc()
+
+      call gradm1(dudx,dudy,dudz,vx)                  !u' = u(t) - u_avg(t)
+      call gradm1(dvdx,dvdy,dvdz,vy)                  !v'=v
+      call gradm1(dwdx,dwdy,dwdz,uf)                  !w'=w
+
+      dudx2 = dudx*dudx                                               !dudx^2
+      dvdx2 = dvdx*dvdx                                               !dvdx^2
+      dwdx2 = dwdx*dwdx                                               !dwdx^2
+
+      dudy2 = dudy*dudy                                               !dudy^2
+      dvdy2 = dvdy*dvdy                                               !dvdy^2
+      dwdy2 = dwdy*dwdy                                               !dwdy^2
+
+      dudz2 = dudz*dudz                                               !dudz^2
+      dvdz2 = dvdz*dvdz                                               !dvdz^2
+      dwdz2 = dwdz*dwdz                                               !dwdz^2
+
+      dissip_t = dudx2 + dvdx2 + dwdx2
+     &          + dudy2 + dvdy2 + dwdy2
+     &          + dudz2 + dvdz2 + dwdz2
+
+      ! Reynolds Stresses
+      ur_t      = (vx * xm1 + vy*ym1) / (sqrt(xm1**2 + ym1**2))
+      rs_t      = ur_t * uf 
+
+      ! Pressure Diffusion
+      call gradm1(dpvxdx,dpvxdy,dpvxdz,pr*vx)
+      call gradm1(dpvydx,dpvydy,dpvydz,pr*vy)
+      call gradm1(dpufdx,dpufdy,dpufdz,pr*uf)
+
+      dpudx_t = dpvxdx + dpvydy + dpufdz
+
+c------Viscous related Diffusion --------------------------------------
+        call gradm1(dvxvxdx,dvxvxdy,dvxvxdz,vx*vx)
+        call gradm1(dum1,d2vxvx_dy2,dum2,dvxvxdy)
+	call gradm1(d2vxvx_dx2,dum1,dum2,dvxvxdx)
+
+        call gradm1(dvyvydx,dvyvydy,dvyvydz,vy*vy)
+        call gradm1(dum1,d2vyvy_dy2,dum2,dvyvydy)
+        call gradm1(d2vyvy_dx2,dum1,dum2,dvyvydx)
+
+
+        call gradm1(dufufdx,dufufdy,dufufdz,uf*uf)
+        call gradm1(dum1,d2ufuf_dy2,dum2,dufufdy)
+	call gradm1(d2ufuf_dx2,dum1,dum2,dufufdx)
+
+
+      duudx2_t = d2vxvx_dy2 + d2vyvy_dy2 + d2ufuf_dy2
+     &    + d2vxvx_dx2 + d2vyvy_dx2 + d2ufuf_dx2 
+
+
+c----Turbulent Diffusion ------------------------------------------
+        call gradm1(dum1,dvxvxvydy,dum2,vx*vx*vy)
+        call gradm1(dum1,dvyvyvydy,dum2,vy*vy*vy)
+        call gradm1(dum1,dufufvydy,dum2,uf*uf*vy)
+
+        call gradm1(dvxvxvxdx,dum1,dum2,vx*vx*vx)
+        call gradm1(dvyvyvxdx,dum1,dum2,vy*vy*vx)
+        call gradm1(dufufvxdx,dum1,dum2,uf*uf*vx)
+
+
+
+        duuudx_t = dvxvxvydy + dvyvyvydy + dufufvydy
+     & 	   +  dvxvxvxdx + dvyvyvxdx + dufufvxdx
+
+
+      ! averaging over time
+      if (atime.ne.0. .and. dtime.ne.0.) then
+        beta      = dtime / atime
+        alpha     = 1. - beta
+
+        dissip = alpha*dissip + beta*dissip_t
+	rs     = alpha*rs     + beta*rs_t
+	dpudx  = alpha*dpudx  + beta*dpudx_t
+	duudx2 = alpha*duudx2 + beta*duudx2_t
+        duuudx = alpha*duuudx + beta*duuudx_t
+      endif
+
+      iostep = 1000
+
+
+c----                                                           -------
+c----                   Feedback Force                          -------
+c----                                                           -------
+
+c-----Project Force from particles-------------------------------------
+      do ie=1,nelt
+      do iz=1,PPICLF_LEZ
+      do iy=1,PPICLF_LEY
+      do ix=1,PPICLF_LEX
+         call ppiclf_solve_GetProFldIJKEF(ix,iy,iz,ie
+     >                              ,PPICLF_P_JFZ,my_ffz(ix,iy,iz,ie))
+      enddo
+      enddo
+      enddo
+      enddo
+
+c-----Set up Regular Grid---------------------------------------------
+        if (icalld_fb.eq.0 .and. FB_FORCE) then
+          icalld_fb = 1
+          call interp_setup(intp_fb,0.0,0,nelt)
+
+          ! Define interpolating slice
+	  do i=1,INTP_FB_NUMR
+	     do j=1,INTP_FB_NTHE
+        	do k=1,INTP_FB_NUMZ
+		   radius 	   =  FLOAT(i) / FLOAT(INTP_FB_NUMR)
+     &                                * 0.5
+ 
+                   index      =  (i-1)*(INTP_FB_NUMZ)*(INTP_FB_NTHE)
+     &                                  + (j-1)*(INTP_FB_NUMZ)  + k
+                   fb_pts(1,index) =  radius*
+     &                   cos(2.*PI*FLOAT(j-1) / FLOAT(INTP_FB_NTHE-1))
+
+                   fb_pts(2,index) =  radius*
+     &                   sin(2.*PI*FLOAT(j-1) / FLOAT(INTP_FB_NTHE-1))
+
+                   fb_pts(3,index) =  FLOAT(k-1) / FLOAT(INTP_FB_NUMZ-1)
+     &                                *ZLENGTH
+
+              enddo
+            enddo
+	   enddo
+        endif
+
+c----Interpolate to regular grid
+      if (mod(istep,FB_FREQ).eq.0 .and. FB_FORCE) then
+
+        call opcopy(fb_fwrk(1,1),fb_fwrk(1,2),fb_fwrk(1,3),
+     &                 my_ffz,my_ffz,my_ffz)
+
+
+        call interp_nfld(fb_fpts,fb_fwrk(1,3),1,fb_pts(1,:),
+     &                fb_pts(2,:),fb_pts(3,:),INTP_FB_TOTP,fb_iwk,
+     &                fb_rwk,INTP_FB_TOTP,.true.,intp_fb)
+
+
+        do i=1,INTP_FB_NUMR
+           do j=1,INTP_FB_NTHE
+              do k=1,INTP_FB_NUMZ
+		 index      =  (i-1)*(INTP_FB_NUMZ)*(INTP_FB_NTHE)
+     &                                  + (j-1)*(INTP_FB_NUMZ)  + k
+
+		 mean_fb(i) = mean_fb(i) + fb_fpts(index) 
+
+		 if (i.eq.1) counter = counter + 1	
+	      enddo
+            enddo
+        enddo
+
+	do i = 1,INTP_FB_NUMR
+		mean_fb_f(i) = mean_fb(i) / counter
+	enddo
+
+      endif
+
+        if (nid .eq. 0) then
+              open(unit=65, file='fb_force', status='replace')
+              write(65,'(A)')
+     &       '# x ruu'
+
+               do i = 1,INTP_FB_NUMR
+ 	           radius          =  FLOAT(i) / FLOAT(INTP_FB_NUMR)
+     &                                * 0.5
+		   radius          = (0.5/param(2) - radius/param(2))
+                       write(65,3)
+     &         radius,
+     &         mean_fb_f(i)
+
+               enddo
+               close(65)
+        endif
+
+
+c----                                                           -------
+c----                   End Feedback Force                      -------
+c----                                                           -------
+
+      timel = time
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userbc (ix,iy,iz,iside,ieg)
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine useric (ix,iy,iz,ieg)
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      xr = x/0.5
+      yr = y/0.5
+      rr = xr*xr + yr*yr
+      if (rr.gt.0) rr=sqrt(rr)
+      th = atan2(y,x)
+      zo = 2*pi*z/ZLENGTH
+
+      uz = 6.*(1-rr**6)/5.
+
+c     Assign a wiggly shear layer near the wall
+      amp_z    = 0.35  ! Fraction of 2pi for z-based phase modification
+      freq_z   = 4     ! Number of wiggles in axial- (z-) direction
+      freq_t   = 9     ! Frequency of wiggles in azimuthal-direction
+
+      amp_tht  = 5     ! Amplification factor for clipped sine function
+      amp_clip = 0.2   ! Clipped amplitude
+
+      blt      = 0.07  ! Fraction of boundary layer with momentum deficit
+
+      phase_z = amp_z*(2*pi)*sin(freq_z*zo)
+
+      arg_tht = freq_t*th + phase_z
+      amp_sin = 5*sin(arg_tht)
+      if (amp_sin.gt. amp_clip) amp_sin =  amp_clip
+      if (amp_sin.lt.-amp_clip) amp_sin = -amp_clip
+
+      if (rr.gt.(1-blt)) uz = uz + amp_sin
+
+c     Quick P-independent randomizer
+      big  = 1.e3*eg + 1.e2*ix + 1.e1*iy + 1.e0*iz
+      rand = sin(big)
+
+      ux   = 20*(.05*rand*rand)
+      uy   = 20*(.10*rand*rand*rand)
+      uz   = 20*(uz + .01*rand)
+
+      temp = 0.
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrdat
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrdat2
+
+      include 'SIZE'
+      include 'TOTAL'
+
+      real*8 rdum,ksp,erest
+      common /ucollision/ ksp,erest
+      data ksp   /10.0/ ! note: this limits dt, whcih we explicity set in .par file
+      data erest /0.8/
+      external ran2
+      common /nekmpi/ mid,mp,nekcomm,nekgroup,nekreal
+
+      real*8 y(PPICLF_LRS    , PPICLF_LPART) ! Normal ordering
+      real*8 rprop(PPICLF_LRP, PPICLF_LPART) ! Normal ordering
+
+      real*8 dp,rhop,rlx,rrx,rly,rry,rlz,rrz,rspace
+      integer*4 imethod,iendian,nmain,noff,nrow,npart
+
+      ! Pass to library to Init MPI
+      call ppiclf_comm_InitMPI(nekcomm,
+     >                         nid    , ! nid already defined in Nek5000
+     >                         np     ) ! np already defined in Nek5000
+
+      ! Set initial conditions and parameters for particles
+      dp      = 0.00263523
+      rhop    = 10000.0
+      rdp     = 1.01*dp ! extra threshold when initially placed
+      rlx     =  -0.4999
+      rrx     =  0.499
+      rly     =  -0.4999
+      rry     =  0.4999
+      rlz     =  0.0
+      rrz     =  2*PI
+
+      npart   = 0
+      imethod = 1
+      iendian = 0
+
+      ! Restart from file
+      call ppiclf_io_ReadParticleVTU("par00002.vtu")
+
+      call ppiclf_solve_InitParticle(imethod   ,
+     >                               ndim      ,
+     >                               iendian   ,
+     >                               npart     ,
+     >                               y(1,1)     ,
+     >                               rprop(1,1))
+
+
+      ! Specify Gaussian filter
+      call ppiclf_solve_InitGaussianFilter(4.0*dp,1E-3,1)
+
+      ! Specify Overlap Mesh
+      print*, "lx1", lx1
+
+      call ppiclf_comm_InitOverlapMesh(nelt,lx1,ly1,lz1,xm1,ym1,zm1)
+
+      ! Specify neighbor bin size
+      call ppiclf_solve_InitNeighborBin(dp)
+
+      call ppiclf_io_ReadWallVTK("pipeMeshBoundary_short.vtk")
+
+      call ppiclf_solve_InitPeriodicZ(rlz,rrz)
+
+      !Set all non-periodic BCs here. This is required due to generating mesh by gmsh and converting it by gmsh2nek
+      do iel=1,nelv
+         do ifc=1,2*ndim
+            id_face = bc(5,ifc,iel,1)
+            if (id_face.eq.3) then    ! wall
+               cbc(ifc,iel,1) = 'W  '
+            endif
+         enddo
+      enddo
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrdat3
+
+      include 'SIZE'
+      include 'TOTAL'
+
+
+      return
+      end
+c-----------------------------------------------------------------------
+      real*8 FUNCTION ran2(idum)
+      INTEGER*4 idum,IM1,IM2,IMM1,IA1,IA2,IQ1,IQ2,IR1,IR2,NTAB,NDIV
+      REAL*8 AM,EPS,RNMX
+      PARAMETER (IM1=2147483563,IM2=2147483399,AM=1./IM1,IMM1=IM1-1,
+     $        IA1=40014,IA2=40692,IQ1=53668,IQ2=52774,IR1=12211,
+     $        IR2=3791,NTAB=32,NDIV=1+IMM1/NTAB,EPS=1.2e-7,RNMX=1.-EPS)
+c Long period (> 2 ! 1018 ) random number generator of L’Ecuyer with
+c Bays-Durham shuffle and added safeguards. Returns a uniform random deviate
+c between 0.0 and 1.0 (exclusive of the endpoint values).
+c Call with idum a negative integer to initialize; thereafter, do not alter
+c idum between successive deviates in a sequence. RNMX should approximate the
+c largest floating value that is less than 1.
+      INTEGER*4 idum2,j,k,iv(NTAB),iy
+      SAVE iv,iy,idum2
+      DATA idum2/123456789/, iv/NTAB*0/, iy/0/
+      if (idum.le.0) then
+         idum1=max(-idum,1)
+         idum2=idum1
+         do j=NTAB+8,1,-1
+            k=idum1/IQ1
+            idum1=IA1*(idum1-k*IQ1)-k*IR1
+            if (idum1.lt.0) idum1=idum1+IM1
+            if (j.le.NTAB) iv(j)=idum1
+         enddo
+         iy=iv(1)
+      endif
+      k=idum1/IQ1
+      idum1=IA1*(idum1-k*IQ1)-k*IR1
+      if (idum1.lt.0) idum1=idum1+IM1
+      k=idum2/IQ2
+      idum2=IA2*(idum2-k*IQ2)-k*IR2
+      if (idum2.lt.0) idum2=idum2+IM2
+      j=1+iy/NDIV
+      iy=iv(j)-idum2
+      iv(j)=idum1
+      if(iy.lt.1)iy=iy+IMM1
+      ran2=min(AM*iy,RNMX)
+      return
+      END
+
+c-----------------------------------------------------------------------
+        subroutine      computeUFluc()
+
+        include 'SIZE'
+        include 'TOTAL'
+
+c       Define the u' component and make it a common datablock
+        common /compUFluc/ uf(lx1,ly1,lz1,lelt)         !This is the u' velocity
+     $                  ,umez(lx1,ly1,lz1,lelt)           !This is the mean velocity
+
+c       Compute the fluctuating component
+        do i=1,nx1*ny1*nz1*nelv
+            uf(i,1,1,1) = vz(i,1,1,1) - umez(i,1,1,1)
+        enddo
+
+        return
+        end
+c----------------------------------------------------------------------
+
+      subroutine set_obj  ! define objects for surface integrals
+c
+      include 'SIZE'
+      include 'TOTAL'
+c
+      integer e,f
+c
+c     Define new objects
+c
+      nobj = 2                  ! for Periodic
+      iobj = 0
+      do ii=nhis+1,nhis+nobj
+         iobj = iobj+1
+         hcode(10,ii) = 'I'
+         hcode( 1,ii) = 'F' ! 'F'
+         hcode( 2,ii) = 'F' ! 'F'
+         hcode( 3,ii) = 'F' ! 'F'
+         lochis(1,ii) = iobj
+      enddo
+      nhis = nhis + nobj
+c
+      if (maxobj.lt.nobj) write(6,*) 'increase maxobj in SIZEu. rm *.o'
+      if (maxobj.lt.nobj) call exitt
+c
+      nxyz = nx1*ny1*nz1
+      do e=1,nelv
+      do f=1,2*ndim
+         if (cbc(f,e,1).eq.'W  ') then
+            iobj=1   !wall
+            if (iobj.gt.0) then
+               nmember(iobj) = nmember(iobj) + 1
+               mem = nmember(iobj)
+               ieg = lglel(e)
+               object(iobj,mem,1) = ieg
+               object(iobj,mem,2) = f
+c              write(6,1) iobj,mem,f,ieg,e,nid,' OBJ'
+    1          format(6i9,a4)
+            endif
+c
+         endif
+      enddo
+      enddo
+c     write(6,*) 'number',(nmember(k),k=1,4)
+c
+      return
+      end
+c--------------------------------------------------------------------
+      subroutine create_particles(npart,y,rprop)
+
+      include 'SIZE'
+      include 'TOTAL'
+      real*8 y(PPICLF_LRS    , PPICLF_LPART) ! Normal ordering
+      real*8 rprop(PPICLF_LRP, PPICLF_LPART) ! Normal ordering
+
+      real*8 dp,rhop,r,rdum
+      integer*4 imethod,iendian,nmain,noff,nrow,npart
+
+      integer icalld
+      save icalld
+      data icalld /0/
+
+   ! Set initial conditions and parameters for particles
+
+      dp      = 0.00263523
+      rhop    = 10000.0
+      rdp     = 1.01*dp ! extra threshold when initially placed
+      rlx     =  -0.4999
+      rrx     =  0.499
+      rly     =  -0.4999
+      rry     =  0.4999
+      rlz     =  0.0
+      rrz     =  2*PI
+
+      nmain   = 2
+      noff    = nmain
+      rspace  = sqrt(0.75d0)*rdp
+      nrow    = 0
+      if (nid .lt. 40)
+     >nrow = 1
+
+      npart   = 0
+      ! the loop below will place particles in a nearly bcc packing
+      ! on nid == 0. We could have done in parallel but for the few
+      ! particles in this case rank 0 is fine
+      do i=1,nrow
+         ! main rows
+         do j=1,nmain
+               rdum     = ran2(2)
+               npart = npart + 1
+               y(PPICLF_JX,npart)  = rdum*0.1
+               y(PPICLF_JY,npart)  = rdum*0.1
+               y(PPICLF_JZ,npart)  = ZLENGTH*((FLOAT(nid)+1.0)/40) 
+               y(PPICLF_JVX,npart) = 18.555555
+               y(PPICLF_JVY,npart) = ((FLOAT(nid)+1.0)/40)
+
+               rprop(PPICLF_R_JRHOP,npart) = rhop
+               rprop(PPICLF_R_JDP  ,npart) = dp
+               rprop(PPICLF_R_JVOLP,npart) = pi/6.0*dp**3
+         enddo
+      enddo
+      imethod = 1
+      iendian = 0
+!     ndim    = 2 ! ndim already defined in Nek5000
+      print*, "npart"
+      print*, npart
+
+      return
+      end
