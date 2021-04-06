@@ -1,0 +1,6 @@
+To gather skewness and flatness statistics:
+
+  1. Copy the file ARRAY_DEF to your local case directory, i.e in the same folder as .usr file
+  2. On line 108, adjust to parameter(nstat = 28)
+  3. Copy lines [372,383] to your file.
+  4. Copy lines [447,480] to your file.
