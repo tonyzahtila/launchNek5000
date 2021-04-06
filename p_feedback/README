@@ -7,4 +7,4 @@ To gather slice:
   
 To go back to old mode:
 
-  1. change INTP_SLICE to 0
+  1. change FB_FORCE to 0
