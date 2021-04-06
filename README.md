@@ -10,3 +10,4 @@ Channel
   - streamwise spectra:   Compute the 1D streamwise pre-multiplied energy spectra.
 
 Pipe
+  - feedback:   Compute the 1D mean feedback force in the pipe from the PPICLF particles.
