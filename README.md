@@ -8,6 +8,8 @@ Channel
   - skewness/flatness:    Compute the 1D skewness/flatness profiles
 
   - streamwise spectra:   Compute the 1D streamwise pre-multiplied energy spectra.
+ 
+  - feedback:   Compute the 1D mean feedback force in the pipe from the PPICLF particles.
 
 Pipe
   - feedback:   Compute the 1D mean feedback force in the pipe from the PPICLF particles.
