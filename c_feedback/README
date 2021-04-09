@@ -1,4 +1,5 @@
-To compute feedback force:
+To compute 1D feedback force profile:
+
 1. Copy lines [614,630] to .usr file.
 2. Ensure nstat = 26 (assuming numbering I've used in this file, where 25 is fb_force).
 3. Copy lines [785,789] & [816,820] & [826] to .usr file.
