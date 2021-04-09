@@ -6,8 +6,9 @@ README
   #EDIT THE .usr file.
   
       1. Copy the lines [31,36] to your .usr file.
-      2. Copy the lines [135,148] to your .usr file.
-      3. Copy the lines [429,487] to your .usr file.
+      2. Copy line [17] to your .usr file.
+      3. Copy the lines [135,148] to your .usr file.
+      4. Copy the lines [429,487] to your .usr file.
  
   The modifications you have made to your .usr file wil output the streamwise velocity on a spectrally interpolated regular grid.
   
