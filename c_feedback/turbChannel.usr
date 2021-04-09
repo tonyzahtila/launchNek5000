@@ -14,6 +14,7 @@ c mesh dimensions
 #define BETAM 2.     /* wall normal stretching parameter */
 #define PI (4.*atan(1.))
 #define XLEN (4.*PI)
+#define YLEN 2
 #define ZLEN PI
 #define NUMBER_ELEMENTS_X 32
 #define NUMBER_ELEMENTS_Y 22
@@ -122,7 +123,7 @@ c-----------------------------------------------------------------------
       save xint, yint, zint
       common /igs_Data/ igs_x,igs_y, igs_z
 
-      parameter(nstat=25)
+      parameter(nstat=26)
       real ravg(lx1*ly1*lz1*lelt,nstat)
       real stat(lx1*ly1*lz1*lelt,nstat)
       real stat_y(INTP_NMAX*nstat)
@@ -216,17 +217,6 @@ c       Placeholder for kinematic viscosity
       save iobj_wall
 
       real my_ffx(PPICLF_LEX,PPICLF_LEY,PPICLF_LEZ,lelt)
-
-      do ie=1,nelt
-      do iz=1,PPICLF_LEZ
-      do iy=1,PPICLF_LEY
-      do ix=1,PPICLF_LEX
-         call ppiclf_solve_GetProFldIJKEF(ix,iy,iz,ie
-     >                              ,PPICLF_P_JFX,my_ffx(ix,iy,iz,ie))
-      enddo
-      enddo
-      enddo
-      enddo
 
 !      call create_particles(npart,y,rprop)
       ! Add them into solver
@@ -617,6 +607,28 @@ c----                                                           -------
 c----                          End Phi_uu                       -------
 c----                                                           -------
 
+c----                                                           -------
+c----                   Feedback Force                          -------
+c----                                                           -------
+
+c-----Project Force from particles-------------------------------------
+      do ie=1,nelt
+      do iz=1,PPICLF_LEZ
+      do iy=1,PPICLF_LEY
+      do ix=1,PPICLF_LEX
+         call ppiclf_solve_GetProFldIJKEF(ix,iy,iz,ie
+     >                              ,PPICLF_P_JFX,my_ffx(ix,iy,iz,ie))
+      enddo
+      enddo
+      enddo
+      enddo
+c-----Average Force from particles-------------------------------------
+      call avg1(ravg(1,25),my_ffx  ,alpha,beta,n,'fbforce',ifverbose)
+
+c----                                                           -------
+c----                   End Feedback Force                      -------
+c----                                                           -------
+
 c--------- Begin Turbulent Energy -------------------------------------
 
         call    computeUFluc()
@@ -754,46 +766,64 @@ c--------- End Turbulent Energy   -------------------------------------
          tplus  = time * u_tau**2 / dnu
 
          write(6,*) 'Dumping statistics ...', Re_tau, t_tau
- 
+
          open(unit=56,file='vel_fluc_prof.dat')
          write(56,'(A,1pe14.7)') '#time = ', time
-         write(56,'(A)') 
-     $    '#  y    y+ uu vv ww uv D P Pd Vd Td'
+         write(56,'(A)')
+     $    '#  y    y+ uu vv ww uv'
 
          open(unit=57,file='mean_prof.dat')
          write(57,'(A,1pe14.7)') '#time = ', time
-         write(57,'(A)') 
+         write(57,'(A)')
      $    '#  y    y+    Umean    Tmean Re_tau uu vv'
+
+         open(unit=60,file='energy_budgets.dat')
+         write(60,'(A,1pe14.7)') '#time = ', time
+         write(60,'(A)')
+     $    '#  y    y+  D P Pd Vd Td'
+
+         open(unit=61,file='fb_force.dat')
+         write(61,'(A,1pe14.7)') '#time = ', time
+         write(61,'(A)')
+     $    '#  y    y+  Fpx'
 
          do i = 1,nint
             yy = 1+yint(i)
-            write(56,3) 
+            write(56,3)
      &           yy,
      &           yy*Re_tau,
      &           (stat_y(1*nint+i)-(stat_y(0*nint+i))**2)/u_tau**2,
      &           stat_y(2*nint+i)/u_tau**2,
      &           stat_y(3*nint+i)/u_tau**2,
-     &           stat_y(4*nint+i)/u_tau**2,
-     &           kinematicViscosity*stat_y(19*nint+i),       !Dissipation
-     &           stat_y(20*nint+i),                          !Production
-     &           stat_y(21*nint+i),                          !Pressure related diffusion
-     &           stat_y(22*nint+i),                          !Viscous  related diffusion
-     &           stat_y(23*nint+i)                           !Turbulent diffusion
+     &           stat_y(4*nint+i)/u_tau**2
 
-            write(57,3) 
+            write(57,3)
      &           yy,
-     &           yy*Re_tau, 
+     &           yy*Re_tau,
      &           stat_y(0*nint+i)/u_tau,
      &           stat_y(5*nint+i)/t_tau,
      &           Re_tau,
      &           stat_y(13*nint+i),
      &           stat_y(14*nint+i)
 
+            write(60,3)
+     &           kinematicViscosity*stat_y(19*nint+i),       !Dissipation
+     &           stat_y(20*nint+i),                          !Production
+     &           stat_y(21*nint+i),                          !Pressure related diffusion
+     &           stat_y(22*nint+i),                          !Viscous  related diffusion
+     &           stat_y(23*nint+i)                           !Turbulent diffusion
+
+            write(61,3)
+     &           yy,
+     &           yy*Re_tau,
+     &           stat_y(24*nint+i)
+
   3         format(1p15e17.9)
          enddo
          close(56)
          close(57)
-
+         close(60)
+         close(61)
 
  998  endif
 
@@ -912,7 +942,7 @@ c-----------------------------------------------------------------------
       iendian = 0
 
       ! Restart from file
-      call ppiclf_io_ReadParticleVTU("par00006.vtu")
+      call ppiclf_io_ReadParticleVTU("par00026.vtu")
 
       rlx     =  0.0
       rrx     =  4*PI
@@ -942,25 +972,25 @@ c-----------------------------------------------------------------------
       ! Add a bottom wall boundary
       call ppiclf_solve_InitWall( 
      >                 (/ 0.0,-1.0,0.0/),
-     >                 (/ 12.56,-1.0,0.0/),
-     >                 (/ 12.56,-1.0,3.14/))
+     >                 (/ 12.566,-1.0,0.0/),
+     >                 (/ 12.566,-1.0,3.14/))
 
       call ppiclf_solve_InitWall(
      >                 (/ 0.0,-1.0,0.0/),
      >                 (/ 0.0,-1.0,3.14/),
-     >                 (/ 12.56,-1.0,3.14/))
+     >                 (/ 12.566,-1.0,3.14/))
 
 
       ! Add a top wall boundary
       call ppiclf_solve_InitWall(
      >                 (/ 0.0,1.0,0.0/),
-     >                 (/ 12.56,1.0,0.0/),
-     >                 (/ 12.56,1.0,3.14/))
+     >                 (/ 12.566,1.0,0.0/),
+     >                 (/ 12.566,1.0,3.14/))
 
       call ppiclf_solve_InitWall(
      >                 (/ 0.0,1.0,0.0/),
      >                 (/ 0.0,1.0,3.14/),
-     >                 (/ 12.56,1.0,3.14/))
+     >                 (/ 12.566,1.0,3.14/))
 
 
       print*, "Initialising Periodicty"
