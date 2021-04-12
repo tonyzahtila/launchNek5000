@@ -1,0 +1,23 @@
+README
+  To compute the 1d pre-multiplied spectra.
+  
+  The process for computing spectra is more involved.
+  
+  #EDIT THE .usr file.
+  
+      1. Copy the lines [31,36] to your .usr file.
+      2. Copy line [17] to your .usr file.
+      3. Copy the lines [135,148] to your .usr file.
+      4. Copy the lines [429,487] to your .usr file.
+ 
+  The modifications you have made to your .usr file wil output the streamwise velocity on a spectrally interpolated regular grid.
+  
+  Now,
+  
+  1. Create the folder 'spectra' in your case directory (i.e, same directory as where is your .usr file)
+  2. Modify line 10 in the file 'compute_spectra.py' to your case directory. 
+  3. Modify line 15 of the file 'python_run' to your case directory.
+  4. Submit the python_run job to spartan.
+  
+  This script will take the spectrally interpolated grids, compute a 1D profile for each time step, store it in the 'spectra' folder, 
+    and then delete the regularly interpolated grid.
