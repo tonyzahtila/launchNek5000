@@ -1,0 +1,19 @@
+#!/bin/sh
+#SBATCH -A punim0600
+#SBATCH --time=00-10:59:00
+#SBATCH --mem-per-cpu=32G
+#SBATCH -p snowy
+# We want 1 nodes (8 CPU cores)
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --job-name="spectra"
+#SBATCH --output="python.out"
+#SBATCH --mail-user=tzahtila@student.unimelb.edu.au
+#SBATCH --mail-type=ALL
+
+
+module load Python/3.6.1-intel-2017.u2
+
+python compute_spectra.py > python_output
+rm -r phi_uu_field*
+
