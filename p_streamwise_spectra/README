@@ -19,7 +19,7 @@ README
   
   1. Create the folder 'spectra' in your case directory (i.e, same directory as where is your .usr file)
   2. Modify line 10 in the file 'compute_spectra.py' to your case directory. 
-  3. Modify line 15 of the file 'python_run' to your case directory.
+  3. Modify line 93 of the file 'compute_spectra.py' to your viscosity.
   4. Submit the python_run job to spartan.
   
   This script will take the spectrally interpolated grids, compute a 1D profile for each time step, store it in the 'spectra' folder, 
