@@ -1,0 +1,824 @@
+C This is a round turbulent pipe flow example
+#include "PPICLF_USER.h"
+#include "PPICLF_STD.h"
+#define ZLENGTH (2.*PI)
+#DEFINE INTP_NUMZ	300
+#DEFINE INTP_NUMR	300
+#DEFINE INTP_NTHETA	100
+#DEFINE INTP_TOTP  INTP_NUMZ*INTP_NUMR*INTP_NTHETA
+
+#define TWO_POINTCORR     1
+#define CORR_FREQ 	  100
+#define INTP_PC_RLOC	  15
+#define INTP_PC_NUMZ      500
+#define INTP_PC_NTHE      200  
+#define INTP_PC_TOTP 	  INTP_PC_NUMZ*INTP_PC_NTHE 
+
+#define PHI               1
+#define PHI_FREQ          500
+#define INTP_PHI_NUMR     200 !20 !200
+#define INTP_PHI_NTHETA   320 !32 !320
+#define INTP_PHI_NUMZ     200 !20 !200
+#define INTP_PHI_TOTP     INTP_PHI_NUMR*INTP_PHI_NTHETA*INTP_PHI_NUMZ
+
+C-----------------------------------------------------------------------
+C
+C  USER SPECIFIED ROUTINES:
+C
+C     - boundary conditions
+C     - initial conditions
+C     - variable properties
+C     - forcing function for fluid (f)
+C     - forcing function for passive scalar (q)
+C     - general purpose routine for checking errors etc.
+C
+C-----------------------------------------------------------------------
+      subroutine uservp (ix,iy,iz,ieg)
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userf  (ix,iy,iz,ieg)
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      FFY = 0.0
+      FFX = 0.0
+      FFZ = 4.0
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userq  (ix,iy,iz,ieg)
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userchk
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'ARRAY_DEF'
+
+
+        common /compUFluc/ uf(lx1,ly1,lz1,lelt)         !This is the u' velocity
+     $                  ,umez(lx1,ly1,lz1,lelt)           !This is the mean velocity
+
+      character*132 fstring
+
+      real tmp1(lx1*ly1*lz1*lelv)
+      real tmp2(lx1*ly1*lz1*lelv)
+      real tmp3(lx1*ly1*lz1*lelv)
+
+      real umex(lx1*ly1*lz1*lelv)
+      real umey(lx1*ly1*lz1*lelv)
+
+      real ur_t(lx1,ly1,lz1,lelt)
+      real u_theta(lx1,ly1,lz1,lelt)
+
+      parameter(nstat=11)
+      real ravg(lx1*ly1*lz1*lelt,nstat)
+      real stat(lx1*ly1*lz1*lelt,nstat)
+
+      real rs_t(lx1,ly1,lz1,lelt)
+      real rs(lx1,ly1,lz1,lelt)
+
+      real dissip_t(lx1,ly1,lz1,lelt)
+      real dissip(lx1,ly1,lz1,lelt)
+
+      real dpudx_t(lx1,ly1,lz1,lelt)
+      real dpudx(lx1,ly1,lz1,lelt)
+
+      real duudx2_t(lx1,ly1,lz1,lelt)
+      real duudx2(lx1,ly1,lz1,lelt)
+
+      real duuudx(lx1,ly1,lz1,lelt)
+      real duuudx_t(lx1,ly1,lz1,lelt)
+
+      integer icalld
+      save    icalld
+      data    icalld /0/
+
+      data icalld_dup /0/
+      save icalld_dup
+
+      integer icalld_s
+      data icalld_s /0/
+      save icalld_s
+
+      integer intp_h,intp_pc,intp_phi
+      save    intp_h,intp_pc,intp_phi
+
+      integer index
+      real   radius, theta, z
+
+      integer itr
+      real    rwk(INTP_TOTP,ldim+1) ! r, s, t, dist2
+      integer iwk(INTP_TOTP,3)      ! code, proc, el
+      save    rwk, iwk
+
+      common /rwk_intp/
+     $       fwrk(lx1*ly1*lz1*lelt,ldim),
+     $       fpts(ldim*INTP_TOTP),
+     $       pts(3,INTP_TOTP),
+     $       uz_avg(nstat,INTP_NUMR)
+
+      real x0(3)
+      data x0 /0.0, 0.0, 0.0/
+      save x0
+
+      integer bIDs(1)
+      save iobj_wall
+
+      common /phi_rwk/
+     $       phi_fwrk(lx1*ly1*lz1*lelt,ldim),
+     $       phi_fpts(INTP_PHI_TOTP),
+     $       phi_pts(3,INTP_PHI_TOTP)
+
+      integer icalld_phi
+      data icalld_phi /0/
+      save icalld_phi
+
+      character*10 x2
+
+      real    phi_rwk(INTP_PHI_TOTP,ldim+1) ! r, s, t, dist2
+      integer phi_iwk(INTP_PHI_TOTP,3)      ! code, proc, el
+
+      common /pc_rwk_intp/
+     $       pc_fwrk(lx1*ly1*lz1*lelt,ldim),
+     $       pc_fpts(ldim*INTP_PC_TOTP),
+     $       pc_pts(3,INTP_PC_TOTP)
+
+      real  numerator(INTP_PC_NUMZ)
+      real  variance(INTP_PC_NUMZ)
+      real  mean(INTP_PC_NUMZ)
+      real  numerator_f(INTP_PC_NUMZ)
+      real  variance_f(INTP_PC_NUMZ)
+      real  mean_f(INTP_PC_NUMZ)
+      real  ruu(INTP_PC_NUMZ)
+
+      real ruu_radius
+      save ruu_radius,numerator,variance,mean,numerator_f
+      save variance_f,mean_f,ruu
+
+      integer icalld_pc
+      data icalld_pc /0/
+      save icalld_pc
+
+      real    pc_rwk(INTP_PC_TOTP,ldim+1) ! r, s, t, dist2
+      integer pc_iwk(INTP_PC_TOTP,3)      ! code, proc, el
+      save    pc_rwk, pc_iwk
+
+      integer counter
+      save    counter
+      save atime,timel,drag_avg
+
+
+      print*, "USERCHK"
+      if (ifneknek) call neknek_exchange
+
+      call copy(tmp1,vx,nx1*ny1*nz1*nelv)
+      call copy(tmp2,vy,nx1*ny1*nz1*nelv)
+      call copy(tmp3,vz,nx1*ny1*nz1*nelv)
+
+
+      if (icalld_dup.eq.0) then
+        bIDs(1) = 1
+        call create_obj(iobj_wall,bIDs,1)
+        drag_avg = 0
+        atime    = 0
+        timel    = time
+        open(unit=58,file='wall_shear_stress.dat')
+         write(58,'(A,1pe14.7)') '#time = ', time
+         write(58,'(A)')
+     $    '#  y    y+    uu    vv    ww    uv    tt    ut    -vt'
+
+        icalld_dup   = 1
+      endif
+
+      if (istep.eq.0) then
+         call set_obj                   ! objects for surface integrals
+         call rzero(x0,3)               ! define x0=0, note: torque w.r.t. x0
+      endif
+
+      dtime = time - timel
+      atime = atime + dtime
+
+      ! averaging over time
+      if (atime.ne.0. .and. dtime.ne.0.) then
+        beta      = dtime / atime
+        alpha     = 1. - beta
+
+        call torque_calc(1.0,x0,.false.,.false.) ! compute wall shear
+        drag_avg = alpha*drag_avg + beta*dragz(iobj_wall)
+      endif
+
+      rho    = param(1)
+      dnu    = param(2)
+      A_w    = 2*pi * 0.5 * ZLENGTH
+      tw     = dragz(iobj_wall) / A_w
+      u_tau  = sqrt(tw / rho)
+      Re_tau = u_tau * 0.5 / dnu
+
+c     Write the file
+         write(58,3)
+     &           time,
+     &           u_tau
+
+c     Close the file
+      if (time.eq.param(10)) then
+        close(58)
+      endif
+      
+  3         format(1p15e17.9)
+
+c     Read in mean field
+      if(icalld.eq.0) then
+        print*, "Read in Mean Field"
+        fstring = 'umean0.f00001'
+        call load_fld(fstring)
+
+        call copy(umex,vx,nx1*ny1*nz1*nelv)
+        call copy(umey,vy,nx1*ny1*nz1*nelv)
+        call copy(umez,vz,nx1*ny1*nz1*nelv)
+
+        call copy(vx,tmp1,nx1*ny1*nz1*nelv)
+        call copy(vy,tmp2,nx1*ny1*nz1*nelv)
+        call copy(vz,tmp3,nx1*ny1*nz1*nelv)
+
+        icalld = 1
+      endif
+
+c--------Define arbtirary points and set up interpolation-----
+
+      if (icalld_s.eq.0) then
+        icalld_s = 1
+        call interp_setup(intp_h,0.0,0,nelt)
+
+      do i=1,INTP_NUMZ
+        do j=1,INTP_NUMR
+                do k=1,INTP_NTHETA
+			  index   = (i-1)*(INTP_NUMR*INTP_NTHETA) + (j-1)*INTP_NTHETA + k
+                          radius  = FLOAT(j)/FLOAT(INTP_NUMR)*0.5
+                          theta   = FLOAT(k)/FLOAT(INTP_NTHETA)*2*PI
+                          z       = FLOAT(i)/FLOAT(INTP_NUMZ)*2*PI
+                          pts(1,index) = radius*cos(theta)
+                          pts(2,index) = radius*sin(theta)
+                          pts(3,index) = z
+                  enddo
+          enddo
+        enddo
+      endif
+
+c----                                                           -------
+c----                         Begin Phi_uu                      -------
+c----                                                           -------
+c--------- Set up Spectra Slice       ---------------------------------
+
+        if (icalld_phi.eq.0 .and. PHI) then
+          icalld_phi = 1
+          call interp_setup(intp_phi,0.0,0,nelt)
+
+          ! Define interpolating slice
+          do i=1,INTP_PHI_NUMR
+            do j=1,INTP_PHI_NTHETA
+              do k=1,INTP_PHI_NUMZ
+                     index   = (i-1)*(INTP_PHI_NUMZ*INTP_PHI_NTHETA) 
+     & 				+ (j-1)*INTP_PHI_NUMZ + k
+                     radius  = FLOAT(i)/FLOAT(INTP_PHI_NUMR)*0.5
+                     theta   = FLOAT(j)/FLOAT(INTP_PHI_NTHETA)*2*PI
+                     z       = FLOAT(k)/FLOAT(INTP_PHI_NUMZ)*2*PI
+                     phi_pts(1,index) = radius*cos(theta)
+                     phi_pts(2,index) = radius*sin(theta)
+                     phi_pts(3,index) = z
+
+
+              enddo
+            enddo
+           enddo
+
+        if (nid .eq. 0) then
+                 open(unit=64, file='spectra_grid')
+                 write(64,*) 'TOTP', INTP_PHI_TOTP,INTP_PHI_NUMR,
+     &           INTP_PHI_NTHETA,INTP_PHI_NUMZ,
+     &           'x, y, z',phi_pts(1,:),phi_pts(2,:),phi_pts(3,:)
+        endif
+
+        endif
+
+      if (mod(istep,PHI_FREQ) .eq. 0 PHI) then
+
+        call opcopy(phi_fwrk(1,1),phi_fwrk(1,2),phi_fwrk(1,3),
+     &                 vz,vz,vz)
+
+
+        call interp_nfld(phi_fpts,phi_fwrk(1,3),1,phi_pts(1,:),
+     &                phi_pts(2,:),phi_pts(3,:),INTP_PHI_TOTP,phi_iwk,
+     &                phi_rwk,INTP_PHI_TOTP,.true.,intp_phi)
+
+
+        print*, "time:", time
+        write (x2,'(f10.3)') time
+
+        if (nid .eq. 0) then
+                 open(unit=65, file='phi_uu_field'//trim(x2))
+                 write(65,*) phi_fpts
+        endif
+
+      endif
+c----                                                           -------
+c----                          End Phi_uu                       -------
+c----                                                           -------
+
+
+c----                                                           -------
+c----                   Begin Two point Correlation             -------
+c----                                                           -------
+c--------- Set up Correlation Slice ---------------------------------
+
+        if (icalld_pc.eq.0 .and. TWO_POINTCORR) then
+          icalld_pc = 1
+          call interp_setup(intp_pc,0.0,0,nelt)
+
+	  ! Find radius
+	  ruu_radius 	= (0.5/param(2) - INTP_PC_RLOC) * param(2)
+ 
+          ! Define interpolating slice
+          do i=1,INTP_PC_NTHE
+            do j=1,INTP_PC_NUMZ
+                   index           =  (i-1)*(INTP_PC_NUMZ) + j
+                   pc_pts(1,index) =  ruu_radius*
+     &                   cos(2.*PI*FLOAT(i-1) / FLOAT(INTP_PC_NTHE-1))
+
+                   pc_pts(2,index) =  ruu_radius*
+     &                   sin(2.*PI*FLOAT(i-1) / FLOAT(INTP_PC_NTHE-1))
+
+                   pc_pts(3,index) =  FLOAT(j-1) / FLOAT(INTP_PC_NUMZ-1)
+     &                                *ZLENGTH
+	    
+              enddo
+            enddo
+        endif
+c--------- Correlation slice ------------------------------------------
+      if (mod(istep,CORR_FREQ).eq.0 .and. TWO_POINTCORR) then
+
+        call opcopy(pc_fwrk(1,1),pc_fwrk(1,2),pc_fwrk(1,3),
+     &                 vz,vz,vz)
+
+
+        call interp_nfld(pc_fpts,pc_fwrk(1,3),1,pc_pts(1,:),
+     &                pc_pts(2,:),pc_pts(3,:),INTP_PC_TOTP,pc_iwk,
+     &                pc_rwk,INTP_PC_TOTP,.true.,intp_pc)
+
+
+
+c -- Need a mean for two point correlation
+        do i=1,INTP_PC_NTHE
+                f_ind = (i-1)*INTP_PC_NUMZ + 1
+                do j = 1,INTP_PC_NUMZ
+                        index   = (i-1)*INTP_PC_NUMZ+j
+                        mean(j)       = mean(j)
+     &                             + pc_fpts(index)
+               enddo
+               counter         = counter + 1
+        enddo
+
+        do j=1,INTP_PC_NUMZ
+                mean_f(j)      = mean(j)  / FLOAT(counter)
+        enddo
+
+
+c -- Perform two point correlation
+        do i=1,INTP_PC_NTHE
+	 	f_ind = (i-1)*INTP_PC_NUMZ + 1	
+                do j = 1,INTP_PC_NUMZ
+			index 	= (i-1)*INTP_PC_NUMZ+j
+                        numerator(j)  = numerator(j)
+     &                             + (pc_fpts(f_ind)-mean_f(j))
+     &				    *(pc_fpts(index)-mean_f(j))
+                        variance(j)   = variance(j) 
+     &                             + (pc_fpts(index)-mean_f(j))**2
+               enddo
+        enddo
+
+
+        do j=1,INTP_PC_NUMZ
+                numerator_f(j)          = numerator(j) / FLOAT(counter)
+                variance_f(j)           = variance(j)  / FLOAT(counter)
+		variance_f(j) 		= variance_f(j)**(0.5)
+        enddo
+
+
+        do j=1,INTP_PC_NUMZ
+                ruu(j)                  = numerator_f(j)  
+     &                       / (variance_f(1)*variance_f(j))
+        enddo
+
+
+	if (nid .eq. 0) then
+	      open(unit=65, file='ruu_streamwise', status='replace')
+	      write(65,'(A)')
+     &       '# x ruu'
+
+	       do i = 1,INTP_PC_NUMZ
+		       write(65,3)
+     &         pc_pts(3,i) / param(2),
+     &         ruu(i)
+
+	       enddo
+	       close(65)
+	endif
+
+      endif
+
+
+c----                                                           -------
+c----                   End Two Point Correlation               -------
+c----                                                           -------
+
+      call    computeUFluc()
+
+      call gradm1(dudx,dudy,dudz,vx)                  !u' = u(t) - u_avg(t)
+      call gradm1(dvdx,dvdy,dvdz,vy)                  !v'=v
+      call gradm1(dwdx,dwdy,dwdz,uf)                  !w'=w
+
+      dudx2 = dudx*dudx                                               !dudx^2
+      dvdx2 = dvdx*dvdx                                               !dvdx^2
+      dwdx2 = dwdx*dwdx                                               !dwdx^2
+
+      dudy2 = dudy*dudy                                               !dudy^2
+      dvdy2 = dvdy*dvdy                                               !dvdy^2
+      dwdy2 = dwdy*dwdy                                               !dwdy^2
+
+      dudz2 = dudz*dudz                                               !dudz^2
+      dvdz2 = dvdz*dvdz                                               !dvdz^2
+      dwdz2 = dwdz*dwdz                                               !dwdz^2
+
+      dissip_t = dudx2 + dvdx2 + dwdx2
+     &          + dudy2 + dvdy2 + dwdy2
+     &          + dudz2 + dvdz2 + dwdz2
+
+      ! Reynolds Stresses
+      ur_t      = (vx * xm1 + vy*ym1) / (sqrt(xm1**2 + ym1**2))
+      u_theta   = (sqrt(xm1**2 + ym1**2)) * (xm1 * vy - vx*ym1) 
+     & 			/ (xm1**2 + ym1**2)
+
+      rs_t      = ur_t * uf 
+
+      ! Pressure Diffusion
+      call gradm1(dpvxdx,dpvxdy,dpvxdz,pr*vx)
+      call gradm1(dpvydx,dpvydy,dpvydz,pr*vy)
+      call gradm1(dpufdx,dpufdy,dpufdz,pr*uf)
+
+      dpudx_t = dpvxdx + dpvydy + dpufdz
+
+c------Viscous related Diffusion --------------------------------------
+        call gradm1(dvxvxdx,dvxvxdy,dvxvxdz,vx*vx)
+        call gradm1(dum1,d2vxvx_dy2,dum2,dvxvxdy)
+	call gradm1(d2vxvx_dx2,dum1,dum2,dvxvxdx)
+
+        call gradm1(dvyvydx,dvyvydy,dvyvydz,vy*vy)
+        call gradm1(dum1,d2vyvy_dy2,dum2,dvyvydy)
+        call gradm1(d2vyvy_dx2,dum1,dum2,dvyvydx)
+
+
+        call gradm1(dufufdx,dufufdy,dufufdz,uf*uf)
+        call gradm1(dum1,d2ufuf_dy2,dum2,dufufdy)
+	call gradm1(d2ufuf_dx2,dum1,dum2,dufufdx)
+
+
+      duudx2_t = d2vxvx_dy2 + d2vyvy_dy2 + d2ufuf_dy2
+     &    + d2vxvx_dx2 + d2vyvy_dx2 + d2ufuf_dx2 
+
+
+c----Turbulent Diffusion ------------------------------------------
+        call gradm1(dum1,dvxvxvydy,dum2,vx*vx*vy)
+        call gradm1(dum1,dvyvyvydy,dum2,vy*vy*vy)
+        call gradm1(dum1,dufufvydy,dum2,uf*uf*vy)
+
+        call gradm1(dvxvxvxdx,dum1,dum2,vx*vx*vx)
+        call gradm1(dvyvyvxdx,dum1,dum2,vy*vy*vx)
+        call gradm1(dufufvxdx,dum1,dum2,uf*uf*vx)
+
+
+
+        duuudx_t = dvxvxvydy + dvyvyvydy + dufufvydy
+     & 	   +  dvxvxvxdx + dvyvyvxdx + dufufvxdx
+
+
+      ! averaging over time
+      if (atime.ne.0. .and. dtime.ne.0.) then
+        beta      = dtime / atime
+        alpha     = 1. - beta
+
+c--------Stat Moments------------------------
+        ifverbose = .false.
+
+	print*, "USERCHK2"
+        n     = nx1*ny1*nz1*nelv
+
+        call avg1(ravg(1,1),vz   ,alpha,beta,n,'uavg',ifverbose)
+        call avg2(ravg(1,2),ur_t ,alpha,beta,n,'urms',ifverbose)
+        call avg2(ravg(1,3),u_theta   ,alpha,beta,n,'utheta',ifverbose)
+        call avg2(ravg(1,4),vz   ,alpha,beta,n,'wrms',ifverbose)
+        call avg3(ravg(1,5),vx,vy,alpha,beta,n,'uvmm',ifverbose)
+        
+
+        call avg1(ravg(1,6),  dissip_t  ,alpha,beta,n,
+     &		'dissip_t',ifverbose)
+        call avg1(ravg(1,7),  rs_t      ,alpha,beta,n,
+     &		'rs_t',ifverbose)
+        call avg1(ravg(1,8),  dpudx_t   ,alpha,beta,n,
+     &          'dpudx_t',ifverbose)
+        call avg1(ravg(1,9),  duudx2_t  ,alpha,beta,n,
+     &          'duudx2_t',ifverbose)
+        call avg1(ravg(1,10), duuudx_t  ,alpha,beta,n,
+     & 		'duuudx_t',ifverbose)
+
+
+c--------Energy Budgets----------------------
+        dissip = alpha*dissip + beta*dissip_t
+	rs     = alpha*rs     + beta*rs_t
+	dpudx  = alpha*dpudx  + beta*dpudx_t
+	duudx2 = alpha*duudx2 + beta*duudx2_t
+        duuudx = alpha*duuudx + beta*duuudx_t
+      endif
+
+
+      iostep = 1000
+
+      if ((mod(istep,iostep) .eq. 0) .and. (istep .gt. 1)) then
+
+c--------uthms---------
+        do itr = 1,nstat
+          ! pack working array
+          call opcopy(fwrk(1,1),fwrk(1,2),fwrk(1,3),
+     &                 ravg(1,itr),ravg(1,itr),ravg(1,itr))
+
+          ! interpolate
+          call interp_nfld(fpts,fwrk(1,3),1,pts(1,:),pts(2,:)
+     &                ,pts(3,:),INTP_TOTP,iwk,rwk,INTP_TOTP,
+     &                .true.,intp_h)
+
+          do j=1,INTP_NUMR
+            uz_avg(itr,j) = 0
+          enddo
+
+          do i=1,INTP_NUMZ
+            do j=1,INTP_NUMR
+                    do k=1,INTP_NTHETA
+                            index   = (i-1)*(INTP_NUMR*INTP_NTHETA)
+     &                            + (j-1)*INTP_NTHETA + k
+                            uz_avg(itr,j) = uz_avg(itr,j) + fpts(index)
+                    enddo
+            enddo
+          enddo
+        enddo
+
+	do itr =1,nstat
+	  do j=1,INTP_NUMR
+            uz_avg(itr,j) = uz_avg(itr,j)/FLOAT(INTP_NUMZ*INTP_NTHETA)
+          enddo
+	enddo
+c-----Write------------------------
+	open(unit=61,file='statisical_moments.dat')
+	  write(61,'(A)')
+     &       '# y+    uz urur uthuth uzuz'
+
+	do i = 1,INTP_NUMR
+	   write(61,3)
+     &           0.5/param(2) - FLOAT(i)/FLOAT(INTP_NUMR)*0.5/param(2),
+     &           uz_avg(1,i),
+     &           uz_avg(2,i),
+     &           uz_avg(3,i),
+     &           uz_avg(4,i) - uz_avg(1,i)**2 
+	enddo
+
+	close(61)
+
+        open(unit=62,file='energy_budgets.dat')
+          write(62,'(A)')
+     &       '# y+    dissip rs dpudx duudx2 duuudx'
+
+        do i = 1,INTP_NUMR
+           write(62,3)
+     &           0.5/param(2) - FLOAT(i)/FLOAT(INTP_NUMR)*0.5/param(2),
+     &           uz_avg(6,i),
+     &           uz_avg(7,i),
+     &           uz_avg(8,i),
+     &           uz_avg(9,i),
+     &           uz_avg(10,i)
+        enddo
+
+        close(62)
+c-----------------------------------
+
+      endif
+      timel = time
+
+      print*, "END USERCHK"
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userbc (ix,iy,iz,iside,ieg)
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine useric (ix,iy,iz,ieg)
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      xr = x/0.5
+      yr = y/0.5
+      rr = xr*xr + yr*yr
+      if (rr.gt.0) rr=sqrt(rr)
+      th = atan2(y,x)
+      zo = 2*pi*z/ZLENGTH
+
+      uz = 6.*(1-rr**6)/5.
+
+c     Assign a wiggly shear layer near the wall
+      amp_z    = 0.35  ! Fraction of 2pi for z-based phase modification
+      freq_z   = 4     ! Number of wiggles in axial- (z-) direction
+      freq_t   = 9     ! Frequency of wiggles in azimuthal-direction
+
+      amp_tht  = 5     ! Amplification factor for clipped sine function
+      amp_clip = 0.2   ! Clipped amplitude
+
+      blt      = 0.07  ! Fraction of boundary layer with momentum deficit
+
+      phase_z = amp_z*(2*pi)*sin(freq_z*zo)
+
+      arg_tht = freq_t*th + phase_z
+      amp_sin = 5*sin(arg_tht)
+      if (amp_sin.gt. amp_clip) amp_sin =  amp_clip
+      if (amp_sin.lt.-amp_clip) amp_sin = -amp_clip
+
+      if (rr.gt.(1-blt)) uz = uz + amp_sin
+
+c     Quick P-independent randomizer
+      big  = 1.e3*eg + 1.e2*ix + 1.e1*iy + 1.e0*iz
+      rand = sin(big)
+
+      ux   = 20*(.05*rand*rand)
+      uy   = 20*(.10*rand*rand*rand)
+      uz   = 20*(uz + .01*rand)
+
+      temp = 0.
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrdat
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrdat2
+
+      include 'SIZE'
+      include 'TOTAL'
+
+      !Set all non-periodic BCs here. This is required due to generating mesh by gmsh and converting it by gmsh2nek
+      do iel=1,nelv
+         do ifc=1,2*ndim
+            id_face = bc(5,ifc,iel,1)
+            if (id_face.eq.3) then    ! wall
+               cbc(ifc,iel,1) = 'W  '
+            endif
+         enddo
+      enddo
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrdat3
+
+      include 'SIZE'
+      include 'TOTAL'
+
+
+      return
+      end
+c-----------------------------------------------------------------------
+      real*8 FUNCTION ran2(idum)
+      INTEGER*4 idum,IM1,IM2,IMM1,IA1,IA2,IQ1,IQ2,IR1,IR2,NTAB,NDIV
+      REAL*8 AM,EPS,RNMX
+      PARAMETER (IM1=2147483563,IM2=2147483399,AM=1./IM1,IMM1=IM1-1,
+     $        IA1=40014,IA2=40692,IQ1=53668,IQ2=52774,IR1=12211,
+     $        IR2=3791,NTAB=32,NDIV=1+IMM1/NTAB,EPS=1.2e-7,RNMX=1.-EPS)
+c Long period (> 2 ! 1018 ) random number generator of L’Ecuyer with
+c Bays-Durham shuffle and added safeguards. Returns a uniform random deviate
+c between 0.0 and 1.0 (exclusive of the endpoint values).
+c Call with idum a negative integer to initialize; thereafter, do not alter
+c idum between successive deviates in a sequence. RNMX should approximate the
+c largest floating value that is less than 1.
+      INTEGER*4 idum2,j,k,iv(NTAB),iy
+      SAVE iv,iy,idum2
+      DATA idum2/123456789/, iv/NTAB*0/, iy/0/
+      if (idum.le.0) then
+         idum1=max(-idum,1)
+         idum2=idum1
+         do j=NTAB+8,1,-1
+            k=idum1/IQ1
+            idum1=IA1*(idum1-k*IQ1)-k*IR1
+            if (idum1.lt.0) idum1=idum1+IM1
+            if (j.le.NTAB) iv(j)=idum1
+         enddo
+         iy=iv(1)
+      endif
+      k=idum1/IQ1
+      idum1=IA1*(idum1-k*IQ1)-k*IR1
+      if (idum1.lt.0) idum1=idum1+IM1
+      k=idum2/IQ2
+      idum2=IA2*(idum2-k*IQ2)-k*IR2
+      if (idum2.lt.0) idum2=idum2+IM2
+      j=1+iy/NDIV
+      iy=iv(j)-idum2
+      iv(j)=idum1
+      if(iy.lt.1)iy=iy+IMM1
+      ran2=min(AM*iy,RNMX)
+      return
+      END
+
+c-----------------------------------------------------------------------
+        subroutine      computeUFluc()
+
+        include 'SIZE'
+        include 'TOTAL'
+
+c       Define the u' component and make it a common datablock
+        common /compUFluc/ uf(lx1,ly1,lz1,lelt)         !This is the u' velocity
+     $                  ,umez(lx1,ly1,lz1,lelt)           !This is the mean velocity
+
+c       Compute the fluctuating component
+        do i=1,nx1*ny1*nz1*nelv
+            uf(i,1,1,1) = vz(i,1,1,1) - umez(i,1,1,1)
+        enddo
+
+        return
+        end
+c----------------------------------------------------------------------
+
+      subroutine set_obj  ! define objects for surface integrals
+c
+      include 'SIZE'
+      include 'TOTAL'
+c
+      integer e,f
+c
+c     Define new objects
+c
+      nobj = 2                  ! for Periodic
+      iobj = 0
+      do ii=nhis+1,nhis+nobj
+         iobj = iobj+1
+         hcode(10,ii) = 'I'
+         hcode( 1,ii) = 'F' ! 'F'
+         hcode( 2,ii) = 'F' ! 'F'
+         hcode( 3,ii) = 'F' ! 'F'
+         lochis(1,ii) = iobj
+      enddo
+      nhis = nhis + nobj
+c
+      if (maxobj.lt.nobj) write(6,*) 'increase maxobj in SIZEu. rm *.o'
+      if (maxobj.lt.nobj) call exitt
+c
+      nxyz = nx1*ny1*nz1
+      do e=1,nelv
+      do f=1,2*ndim
+         if (cbc(f,e,1).eq.'W  ') then
+            iobj=1   !wall
+            if (iobj.gt.0) then
+               nmember(iobj) = nmember(iobj) + 1
+               mem = nmember(iobj)
+               ieg = lglel(e)
+               object(iobj,mem,1) = ieg
+               object(iobj,mem,2) = f
+c              write(6,1) iobj,mem,f,ieg,e,nid,' OBJ'
+    1          format(6i9,a4)
+            endif
+c
+         endif
+      enddo
+      enddo
+c     write(6,*) 'number',(nmember(k),k=1,4)
+c
+      return
+      end
