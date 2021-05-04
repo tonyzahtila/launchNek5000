@@ -623,6 +623,7 @@ c--------- Set up Correlation Slice ---------------------------------
      &                                *ZLENGTH
 
               enddo
+        endif
 c-------- Correlation slice ------------------------------------------
       if (mod(istep,CORR_FREQ).eq.0 .and. TWO_POINTCORR) then
 
