@@ -1,0 +1,11 @@
+To gather slice:
+
+  1. copy lines [7,13] to your .usr file
+  2. change FB_FORCE to 1
+  3. copy lines [114,136] to userchk file. 
+  4. copy lines [103,104] to userchk file. 
+  5. copy lines [371,466] to somewhere in your userchk subroutine
+  
+To go back to old mode:
+
+  1. change FB_FORCE to 0
